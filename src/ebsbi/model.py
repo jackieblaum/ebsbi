@@ -226,15 +226,9 @@ class EBModel:
             print(phases)
             print(fluxes)
 
-            # TEMPORARY: Normalize before eclipsebin so it can find eclipse boundaries
-            # TODO: This is a hack for testing - proper normalization should happen after binning
-            flux_median = np.median(fluxes)
-            fluxes_normalized = fluxes / flux_median
-            sigmas_scaled = sigmas / flux_median
-
             # bin to <= nbins and propagate sigmas -> binned sigmas via eclipsebin
             ph_b, fl_b, er_b = self._bin_with_eclipsebin(
-                phases, fluxes_normalized, sigmas_scaled, nbins=nbins_eff, plot=False
+                phases, fluxes, sigmas, nbins=nbins_eff, plot=False
             )
 
             phases_passbands.append(ph_b)

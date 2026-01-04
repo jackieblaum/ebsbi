@@ -1,3 +1,18 @@
+"""
+Test suite for light curve flux normalization.
+
+TDD Phase: RED (Task 1)
+-----------------------
+These tests are EXPECTED TO FAIL until the normalization implementation is added
+in Task 2. This is proper TDD practice:
+- Task 1 (RED): Write failing tests that define requirements
+- Task 2 (GREEN): Implement code to make tests pass
+
+The tests verify that generated light curves have:
+1. Median flux normalized to 1.0 for each passband
+2. Flux errors scaled by the same normalization factor
+3. All errors remain positive and finite after normalization
+"""
 import numpy as np
 import pytest
 from ebsbi.model import EBModel
