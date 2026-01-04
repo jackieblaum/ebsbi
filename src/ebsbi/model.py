@@ -138,7 +138,7 @@ class EBModel:
             # 3) Metadata
             # -------------------------
             meta = []
-            meta.append(float(theta_dict["period"]))       # example
+            # meta.append(float(theta_dict["period"]))       # period not in params_dict
             meta.append(float(theta_dict["distance"]))
             meta = np.asarray(meta, dtype=np.float32)
 
