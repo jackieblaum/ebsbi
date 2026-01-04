@@ -175,3 +175,56 @@ def test_light_curve_error_scaling(eb_model_setup):
         # (not testing exact values, just that errors scaled correctly)
         assert np.median(snr) > 1 and np.median(snr) < 1000, \
             f"Passband {i}: Median SNR {np.median(snr)} seems unreasonable"
+
+
+def test_nbi_simulator_with_normalized_fluxes(eb_model_setup):
+    """Test that nbi_simulator correctly uses normalized light curves."""
+    import tempfile
+    import os
+
+    # Unpack fixture
+    conf, phase_bank, noise_bank = eb_model_setup
+
+    # Setup RNG for reproducibility
+    rng = np.random.default_rng(seed=42)
+
+    # Create model instance with fixture data
+    model = EBModel(
+        eb_path=conf.eb_path,
+        params_dict=conf.labels_dict,
+        phase_bank=phase_bank,
+        noise_bank=noise_bank,
+        rng=rng
+    )
+
+    # Use fixed, pre-validated theta parameters
+    theta_sample = get_valid_theta_sample()
+    theta = theta_sample[0]  # Extract 1D array from (1, 16) shape
+
+    # Run simulator
+    with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as f:
+        temp_path = f.name
+
+    try:
+        success = model.nbi_simulator(theta, temp_path)
+        assert success, "nbi_simulator should succeed"
+
+        # Load and verify
+        x_obj = np.load(temp_path, allow_pickle=True).item()
+
+        # Verify fluxes are normalized
+        for i, lc_flux in enumerate(x_obj['lc']):
+            flux_median = np.median(lc_flux)
+            assert np.isclose(flux_median, 1.0, rtol=1e-6), \
+                f"Passband {i}: nbi_simulator flux median should be 1.0, got {flux_median}"
+
+        # Verify errors are present and positive
+        for i, lc_err in enumerate(x_obj['lc_err']):
+            assert len(lc_err) == len(x_obj['lc'][i]), \
+                f"Passband {i}: errors and fluxes must have same length"
+            assert np.all(lc_err > 0), \
+                f"Passband {i}: all errors must be positive"
+
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
