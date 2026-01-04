@@ -14,11 +14,15 @@ The tests verify that generated light curves have:
 3. All errors remain positive and finite after normalization
 """
 import numpy as np
+from pathlib import Path
 import pytest
 from ebsbi.model import EBModel
 from ebsbi.config import Config
-from ebsbi.priors import EBPriors
-from isochrones import get_ichrone
+
+# Test configuration constants
+NUM_PHASE_POINTS = 100
+NOISE_LEVEL = 0.01
+CONFIG_FILE = 'config_linear_times_sequential.yml'
 
 
 def get_valid_theta_sample():
@@ -54,28 +58,50 @@ def get_valid_theta_sample():
     ]])
 
 
-def test_light_curve_flux_normalized_to_median_one():
-    """Test that generate_light_curve returns fluxes with median=1 for each passband."""
-    # Setup
-    rng = np.random.default_rng(seed=42)
-    config_path = 'docs/config_linear_times_sequential.yml'
-    conf = Config(config_path)
+@pytest.fixture
+def eb_model_setup():
+    """
+    Pytest fixture that provides common setup for EBModel tests.
+
+    Returns a tuple of (config, phase_bank, noise_bank) that can be used
+    to initialize an EBModel instance with consistent test data.
+
+    The config path is resolved relative to the repository root (docs/ directory).
+    """
+    # Resolve config path relative to test file location
+    test_dir = Path(__file__).parent
+    repo_root = test_dir.parent
+    config_path = repo_root / 'docs' / CONFIG_FILE
+
+    conf = Config(str(config_path))
 
     # Create minimal phase_bank and noise_bank for testing
     # These simulate observational data from different surveys
     phase_bank = {
-        'ASASSN_g': [np.linspace(0, 1, 100)],
-        'ASASSN_V': [np.linspace(0, 1, 100)],
-        'ZTF_zg': [np.linspace(0, 1, 100)],
-        'ZTF_zr': [np.linspace(0, 1, 100)],
+        'ASASSN_g': [np.linspace(0, 1, NUM_PHASE_POINTS)],
+        'ASASSN_V': [np.linspace(0, 1, NUM_PHASE_POINTS)],
+        'ZTF_zg': [np.linspace(0, 1, NUM_PHASE_POINTS)],
+        'ZTF_zr': [np.linspace(0, 1, NUM_PHASE_POINTS)],
     }
     noise_bank = {
-        'ASASSN_g': [np.full(100, 0.01)],
-        'ASASSN_V': [np.full(100, 0.01)],
-        'ZTF_zg': [np.full(100, 0.01)],
-        'ZTF_zr': [np.full(100, 0.01)],
+        'ASASSN_g': [np.full(NUM_PHASE_POINTS, NOISE_LEVEL)],
+        'ASASSN_V': [np.full(NUM_PHASE_POINTS, NOISE_LEVEL)],
+        'ZTF_zg': [np.full(NUM_PHASE_POINTS, NOISE_LEVEL)],
+        'ZTF_zr': [np.full(NUM_PHASE_POINTS, NOISE_LEVEL)],
     }
 
+    return conf, phase_bank, noise_bank
+
+
+def test_light_curve_flux_normalized_to_median_one(eb_model_setup):
+    """Test that generate_light_curve returns fluxes with median=1 for each passband."""
+    # Unpack fixture
+    conf, phase_bank, noise_bank = eb_model_setup
+
+    # Setup RNG for reproducibility
+    rng = np.random.default_rng(seed=42)
+
+    # Create model instance with fixture data
     model = EBModel(
         eb_path=conf.eb_path,
         params_dict=conf.labels_dict,
@@ -109,27 +135,15 @@ def test_light_curve_flux_normalized_to_median_one():
             f"Passband {i}: All errors must be positive"
 
 
-def test_light_curve_error_scaling():
+def test_light_curve_error_scaling(eb_model_setup):
     """Test that flux errors are scaled by the same factor as fluxes."""
-    # Setup
+    # Unpack fixture
+    conf, phase_bank, noise_bank = eb_model_setup
+
+    # Setup RNG for reproducibility
     rng = np.random.default_rng(seed=123)
-    config_path = 'docs/config_linear_times_sequential.yml'
-    conf = Config(config_path)
 
-    # Create minimal phase_bank and noise_bank for testing
-    phase_bank = {
-        'ASASSN_g': [np.linspace(0, 1, 100)],
-        'ASASSN_V': [np.linspace(0, 1, 100)],
-        'ZTF_zg': [np.linspace(0, 1, 100)],
-        'ZTF_zr': [np.linspace(0, 1, 100)],
-    }
-    noise_bank = {
-        'ASASSN_g': [np.full(100, 0.01)],
-        'ASASSN_V': [np.full(100, 0.01)],
-        'ZTF_zg': [np.full(100, 0.01)],
-        'ZTF_zr': [np.full(100, 0.01)],
-    }
-
+    # Create model instance with fixture data
     model = EBModel(
         eb_path=conf.eb_path,
         params_dict=conf.labels_dict,
