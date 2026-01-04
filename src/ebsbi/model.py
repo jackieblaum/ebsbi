@@ -221,19 +221,26 @@ class EBModel:
             N = len(phases)
             nbins_eff = self.choose_nbins_from_npoints(N, nbins_max=nbins, nbins_min=10, points_per_bin=5)
 
-            plt.scatter(phases, fluxes)
-            plt.show()
-            print(phases)
-            print(fluxes)
+            # Normalize unbinned fluxes to help eclipsebin find eclipse boundaries
+            # eclipsebin expects flux baseline near 1.0
+            flux_median_unbinned = np.median(fluxes)
+            fluxes_for_binning = fluxes / flux_median_unbinned
+            sigmas_for_binning = sigmas / flux_median_unbinned
 
             # bin to <= nbins and propagate sigmas -> binned sigmas via eclipsebin
             ph_b, fl_b, er_b = self._bin_with_eclipsebin(
-                phases, fluxes, sigmas, nbins=nbins_eff, plot=False
+                phases, fluxes_for_binning, sigmas_for_binning, nbins=nbins_eff, plot=False
             )
 
+            # Normalize fluxes to median=1 and scale errors accordingly
+            # Even though unbinned data was normalized, binning may change the median slightly
+            flux_median = np.median(fl_b)
+            fl_b_normalized = fl_b / flux_median
+            er_b_normalized = er_b / flux_median
+
             phases_passbands.append(ph_b)
-            fluxes_passbands.append(fl_b)
-            errs_passbands.append(er_b)
+            fluxes_passbands.append(fl_b_normalized.astype(np.float32))
+            errs_passbands.append(er_b_normalized.astype(np.float32))
 
         return phases_passbands, fluxes_passbands, errs_passbands
 
