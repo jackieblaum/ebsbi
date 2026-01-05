@@ -267,7 +267,9 @@ class EBModel:
             # eclipsebin expects flux baseline near 1.0
             flux_median_unbinned = np.median(fluxes)
             fluxes_for_binning = fluxes / flux_median_unbinned
-            sigmas_for_binning = sigmas / flux_median_unbinned
+            # sigmas are fractional errors (multiplicative noise scales from log_noise=True)
+            # Apply to normalized fluxes to get absolute errors in normalized units
+            sigmas_for_binning = sigmas * fluxes_for_binning
 
             # bin to <= nbins and propagate sigmas -> binned sigmas via eclipsebin
             ph_b, fl_b, er_b = self._bin_with_eclipsebin(

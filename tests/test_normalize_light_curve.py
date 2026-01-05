@@ -21,7 +21,7 @@ from ebsbi.config import Config
 
 # Test configuration constants
 NUM_PHASE_POINTS = 100
-NOISE_LEVEL = 1e-8  # Appropriate noise level for PHOEBE flux scale (~1e-7)
+NOISE_LEVEL = 0.01  # Fractional noise level (1% error) - noise_bank uses fractional errors
 CONFIG_FILE = 'config_linear_times_sequential.yml'
 
 
