@@ -196,6 +196,48 @@ class EBModel:
                 np.asarray(bin_errs, dtype=np.float32))
 
     def generate_light_curve(self, theta, name=None, nbins=200):
+        """
+        Generate synthetic light curves from PHOEBE model with normalized fluxes.
+
+        Parameters
+        ----------
+        theta : array-like or dict
+            Parameter vector or dictionary. If array, will be converted to dict
+            using self.params_dict.keys(). Should contain all required PHOEBE
+            parameters (period, q, teff1, teff2, r1, r2, etc.).
+        name : str, optional
+            Name for the light curve (currently unused).
+        nbins : int, default=200
+            Maximum number of bins for eclipsebin. Actual number may be lower
+            based on data density (see choose_nbins_from_npoints).
+
+        Returns
+        -------
+        phases_passbands : list of ndarray
+            Phase arrays for each passband, shape (nbins_eff,) each.
+        fluxes_passbands : list of ndarray
+            Normalized flux arrays for each passband, shape (nbins_eff,) each.
+            **Fluxes are normalized to median=1 for each passband.**
+        errs_passbands : list of ndarray
+            Flux uncertainty arrays for each passband, shape (nbins_eff,) each.
+            **Errors are scaled by the same normalization factor as fluxes.**
+
+        Notes
+        -----
+        - Phases are sorted in ascending order
+        - Binning is performed using eclipsebin with adaptive bin selection
+        - Noise is sampled from cadence_noise_sampler based on survey/system
+        - Each passband is normalized independently to median flux = 1.0
+        - Error propagation: if flux is divided by median M, errors are also
+          divided by M to maintain correct fractional uncertainties
+
+        Examples
+        --------
+        >>> theta = {'period': 2.5, 'q': 0.8, 'teff1': 6000, ...}
+        >>> phases, fluxes, errs = model.generate_light_curve(theta, nbins=200)
+        >>> np.median(fluxes[0])  # Should be 1.0
+        1.0
+        """
         theta_dict = {name: val for name, val in zip(self.params_dict.keys(), np.array(theta).T)}
         b = self.create_phoebe_bundle(theta_dict)
         b.run_compute()
