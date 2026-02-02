@@ -450,8 +450,9 @@ class EBModel:
         theta_dict = {name: val for name, val in zip(self.params_dict.keys(), np.array(theta).T)}
         self.bundle = self.create_phoebe_bundle(theta_dict)
 
-        # Extract period from bundle (may be computed from other parameters)
+        # Extract period and incl from bundle (may be computed from other parameters)
         self.period = self.bundle.get_value('period@binary@component')
+        self.incl = self.bundle.get_value('incl@binary@component')
 
         self.bundle.run_compute()
 
@@ -527,40 +528,20 @@ class EBModel:
         """
         theta_dict = {name: val for name, val in zip(self.params_dict.keys(), np.array(theta).T)}
 
-        # Extract parameters needed for PHOEBE
-        teff1 = theta_dict["teff1"][0]
-        r1    = theta_dict["r1"][0]
-        teff2 = theta_dict["teff2"][0]
-        r2    = theta_dict["r2"][0]
-        msum  = theta_dict["msum"][0]
-        q     = theta_dict["q"][0]
-        incl   = theta_dict["incl"][0]
+        # Extract distance and ebv (not in PHOEBE bundle)
         dist = theta_dict["distance"][0]
         ebv  = theta_dict["ebv"][0]
 
-        # Period is computed by PHOEBE from other parameters
-        # Use self.period if already set (from generate_light_curve), otherwise extract from bundle
-        if hasattr(self, 'period'):
-            period = self.period
+        # Use existing bundle if available (from generate_light_curve), otherwise create temporary bundle
+        if hasattr(self, 'bundle'):
+            bundle = self.bundle
         else:
-            # Create temporary bundle to extract period
-            temp_bundle = self.create_phoebe_bundle(theta_dict, passbands=[])
-            period = temp_bundle.get_value('period@binary@component')
+            # Create temporary bundle for SED computation
+            bundle = self.create_phoebe_bundle(theta_dict, passbands=[])
 
-        # Calculate individual masses
-        m1 = msum / (q + 1)
-        m2 = q * m1
-
-        # Create PHOEBE wrapper instance
+        # Create PHOEBE wrapper instance with bundle
         phoebe_wrapper = PhoebeWrapper(
-            teff1=teff1,
-            teff2=teff2,
-            requiv1=r1,
-            requiv2=r2,
-            mass1=m1,
-            mass2=m2,
-            period=period,
-            incl=incl,
+            bundle=bundle,
             distance=dist,
             ebv=ebv
         )
@@ -624,8 +605,17 @@ class EBModel:
         b.set_value('abun@primary', value=feh)
         b.set_value('abun@secondary', value=feh)
 
+        # Convert cosi to incl (PHOEBE expects inclination in degrees)
+        if 'cosi' in theta:
+            cosi = float(theta['cosi'])
+            incl_rad = np.arccos(cosi)
+            incl_deg = np.degrees(incl_rad)
+            incl_twig = TWIG_DICT.get('incl')
+            b.set_value(incl_twig, value=incl_deg)
+            print(f'Set {incl_twig} from cosi={cosi:.4f} -> incl={incl_deg:.2f} deg')
+
         for param, value in theta.items():
-            if param not in ['mag', 'times', 'msum', 'metallicity', 'log_age', 'ebv', 'period']:
+            if param not in ['mag', 'times', 'msum', 'metallicity', 'log_age', 'ebv', 'period', 'cosi']:
                 twig = TWIG_DICT.get(param)
                 if twig:
                     b.set_value(twig, value=float(value))
