@@ -1,4 +1,5 @@
 import copy
+import warnings
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
@@ -820,6 +821,7 @@ def bin_light_curve(
     atol_primary=0.001,
     atol_secondary=0.05,
     plot=False,
+    plot_filename=None,
     use_edge_detection=False,
     edge_detection_method='slope',
     edge_detection_kwargs=None
@@ -850,6 +852,9 @@ def bin_light_curve(
         Tolerance for secondary eclipse detection
     plot : bool
         Whether to plot the binning (for debugging)
+    plot_filename : str or Path, optional
+        If provided and plot=True, saves combined unbinned+binned
+        plot to this path. If None, plot is displayed but not saved.
     use_edge_detection : bool, default=False
         If True, use slope/curvature-based edge detection to improve eclipse
         boundary detection. This is more robust to ellipsoidal variations.
@@ -936,7 +941,40 @@ def bin_light_curve(
                 atol_primary=atol_primary,
                 atol_secondary=atol_secondary,
             )
-            bin_phases, bin_fluxes, bin_sigmas = binner.bin_light_curve(plot=plot)
+            bin_phases, bin_fluxes, bin_sigmas = binner.bin_light_curve(plot=False)
+
+            # Save plot if requested
+            if plot and plot_filename:
+                try:
+                    import matplotlib.pyplot as plt
+
+                    # Create plots using eclipsebin's methods
+                    binner.plot_unbinned_light_curve()
+                    fig_unbinned = plt.gcf()
+
+                    binner.plot_binned_light_curve(bin_phases, bin_fluxes, bin_sigmas)
+                    fig_binned = plt.gcf()
+
+                    # Create combined figure (1 row, 2 columns)
+                    combined_fig = plt.figure(figsize=(24, 6))
+                    gs = combined_fig.add_gridspec(1, 2)
+
+                    # Copy axes from captured figures to combined figure
+                    ax_unbinned = combined_fig.add_subplot(gs[0, 0])
+                    ax_binned = combined_fig.add_subplot(gs[0, 1])
+
+                    # Transfer content from original figures
+                    _copy_axes_content(fig_unbinned.axes[0], ax_unbinned)
+                    _copy_axes_content(fig_binned.axes[0], ax_binned)
+
+                    # Save combined figure
+                    combined_fig.savefig(str(plot_filename), dpi=150, bbox_inches='tight')
+
+                except Exception as e:
+                    warnings.warn(f"Failed to save binning plot {plot_filename}: {e}")
+                finally:
+                    # Always clean up figures to free memory
+                    plt.close('all')
 
             # Success! Break out of retry loop
             if attempt > 0 and plot:
