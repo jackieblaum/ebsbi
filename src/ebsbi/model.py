@@ -1,8 +1,12 @@
+import warnings
+from pathlib import Path
+
 import phoebe
 import numpy as np
 import scipy.stats
 import eclipsebin as ebin
 from functools import partial
+from astropy import units as u
 
 import matplotlib.pyplot as plt
 
@@ -15,27 +19,182 @@ from .phoebe_wrapper import PhoebeWrapper
 # MODEL CLASS
 # =======================
 
+C_LIGHT_SI = 2.99792458e8  # m/s
+
 class EBModel:
     """
     Encapsulates the PHOEBE eclipsing binary model and related utilities.
+
+    Parameters
+    ----------
+    eb_path : str or Path
+        Path to eclipsing binary data
+    params_dict : dict
+        Dictionary of parameter names and ranges
+    phase_bank : dict, optional
+        Phase data for cadence sampling
+    noise_bank : dict, optional
+        Noise data for cadence sampling
+    rng : int or RandomState, optional
+        Random number generator seed or instance
+    save_binning_plots : bool, optional
+        If True, save diagnostic plots during light curve binning.
+        Default: False
+    plot_output_dir : str or Path, optional
+        Base directory for saving plots. Plots saved to
+        <plot_output_dir>/binning_plots/. Required if save_binning_plots=True.
+    amortized : bool, optional
+        Whether to use amortized inference. Default: False
+    system_weights : str, optional
+        Weighting scheme for system selection. Default: "length"
     """
 
-    def __init__(self, eb_path, params_dict, phase_bank, noise_bank, amortized=False, rng=None, system_weights="length"):
+    def __init__(
+        self,
+        eb_path,
+        params_dict,
+        phase_bank=None,
+        noise_bank=None,
+        rng=None,
+        save_binning_plots=False,
+        plot_output_dir=None,
+        amortized=False,
+        system_weights="length",
+    ):
         self.eb_path = eb_path
         self.params_dict = params_dict
         self.amortized = amortized
         self.rng = np.random.default_rng(rng)
 
-        self.cadence_noise_sampler = CadenceNoiseSampler(
-            phase_bank,
-            noise_bank,
-            log_noise=True,
-            seed=rng,
-            system_weights=system_weights,
-        )
+        if phase_bank is not None and noise_bank is not None:
+            self.cadence_noise_sampler = CadenceNoiseSampler(
+                phase_bank,
+                noise_bank,
+                log_noise=True,
+                seed=rng,
+                system_weights=system_weights,
+            )
+        else:
+            self.cadence_noise_sampler = None
 
         self._lc_system_ids = {}  # maps dataset_label -> (survey, system_idx)
         self._lc_dataset_labels = []
+        self._pb_cache = {}
+
+        # Plot saving configuration
+        self.save_binning_plots = save_binning_plots
+        self.plot_output_dir = Path(plot_output_dir) if plot_output_dir else None
+
+        # Validate plot configuration
+        if self.save_binning_plots and self.plot_output_dir is None:
+            warnings.warn(
+                "save_binning_plots=True but plot_output_dir not provided. "
+                "Disabling plot saving."
+            )
+            self.save_binning_plots = False
+
+        # Initialize sample tracking for plot naming
+        self._current_sample_id = 0
+
+    def _pb_pivot_and_dnu(self, passband, lambda_kind="pivot"):
+        """
+        Return (lambda_nm, dnu_Hz) for a PHOEBE passband, cached.
+        We normalize the passband transmission so amplitude doesn't matter.
+        """
+        key = (str(passband), lambda_kind)
+        if key in self._pb_cache:
+            return self._pb_cache[key]
+
+        pb = phoebe.get_passband(passband)
+
+        wl_m = np.asarray(pb.ptf_table["wl"], dtype=float)  # meters
+        T    = np.asarray(pb.ptf_table["fl"], dtype=float)  # dimensionless
+
+        ok = np.isfinite(wl_m) & np.isfinite(T) & (wl_m > 0) & (T > 0)
+        wl_m = wl_m[ok]
+        T    = T[ok]
+
+        if wl_m.size < 3:
+            self._pb_cache[key] = (np.nan, np.nan)
+            return self._pb_cache[key]
+
+        # Normalize transmission so peak=1 (CRITICAL!)
+        Tpeak = np.nanmax(T)
+        if not np.isfinite(Tpeak) or Tpeak <= 0:
+            self._pb_cache[key] = (np.nan, np.nan)
+            return self._pb_cache[key]
+        Tn = T / Tpeak
+
+        # Representative wavelength (pivot or mean), using normalized T
+        if lambda_kind == "pivot":
+            num = np.trapz(wl_m * Tn, wl_m)
+            den = np.trapz(Tn / wl_m, wl_m)
+            lam_m = np.sqrt(num / den)
+        elif lambda_kind == "mean":
+            lam_m = np.trapz(wl_m * Tn, wl_m) / np.trapz(Tn, wl_m)
+        else:
+            raise ValueError("lambda_kind must be 'pivot' or 'mean'")
+
+        lam_nm = (lam_m * u.m).to_value(u.nm)
+
+        # Effective rectangular width in FREQUENCY:
+        # Δν_eff = ∫ T(ν) dν (with T normalized, amplitude invariant)
+        nu = C_LIGHT_SI / wl_m
+        order = np.argsort(nu)
+        dnu_Hz = float(np.trapz(Tn[order], nu[order]))
+
+        self._pb_cache[key] = (float(lam_nm), float(dnu_Hz))
+        return self._pb_cache[key]
+
+
+    def bandflux_Wm2_to_fnu_Jy(self, bandflux_W_m2, filter_mask=None, lambda_kind="pivot"):
+        bandflux_W_m2 = np.asarray(bandflux_W_m2, dtype=float)
+        n = len(PhoebeWrapper.CANONICAL_FILTERS)
+
+        lam_nm = np.full(n, np.nan)
+        fnu_Jy = np.full(n, np.nan)
+
+        if filter_mask is None:
+            mask = np.isfinite(bandflux_W_m2) & (bandflux_W_m2 > 0)
+        else:
+            mask = np.asarray(filter_mask, dtype=bool) & np.isfinite(bandflux_W_m2) & (bandflux_W_m2 > 0)
+
+        c = C_LIGHT_SI  # m/s
+
+        for i, f in enumerate(PhoebeWrapper.CANONICAL_FILTERS):
+            if not mask[i]:
+                continue
+
+            pb = phoebe.get_passband(f)
+            wl_m = np.asarray(pb.ptf_table["wl"], dtype=float)  # meters
+            T    = np.asarray(pb.ptf_table["fl"], dtype=float)  # dimensionless
+
+            # representative wavelength for plotting (pivot or mean)
+            Tpeak = np.nanmax(T)
+            if not np.isfinite(Tpeak) or Tpeak <= 0:
+                continue
+
+            if lambda_kind == "pivot":
+                num = np.trapz(wl_m * T, wl_m)
+                den = np.trapz(T / wl_m, wl_m)
+                lam_m = np.sqrt(num / den)
+            elif lambda_kind == "mean":
+                lam_m = np.trapz(wl_m * T, wl_m) / np.trapz(T, wl_m)
+            else:
+                raise ValueError("lambda_kind must be 'pivot' or 'mean'")
+
+            # ---- KEY PART: solve for band-averaged Fnu from the integral ----
+            denom = np.trapz(T * (c / (wl_m**2)), wl_m)  # units: 1/s
+            if not np.isfinite(denom) or denom <= 0:
+                continue
+
+            fnu_W_m2_Hz = bandflux_W_m2[i] / denom  # W m^-2 Hz^-1
+            lam_nm[i] = lam_m * 1e9
+            fnu_Jy[i] = fnu_W_m2_Hz / 1e-26
+
+        return lam_nm.astype(np.float32), fnu_Jy.astype(np.float32)
+
+
 
     def _passband_to_survey(self, passband):
         """
@@ -552,15 +711,24 @@ class EBModel:
         # Extract wavelengths and fluxes
         # result['fluxes'] is [n_phases, n_filters], we want [n_filters] for phase 0
         wavelengths = np.asarray(result['wavelengths'], dtype=np.float32)
-        sed_flux = np.asarray(result['fluxes'][0], dtype=np.float32)
+        sed_band_Wm2 = np.asarray(result["fluxes"][0], dtype=np.float32)
+        filter_mask  = np.asarray(result["filter_mask"], dtype=np.float32)
 
-        # Get filter validity mask (True/1 = valid, False/0 = NaN/invalid)
-        filter_mask = np.asarray(result['filter_mask'], dtype=np.float32)
+        # Convert to f_nu (Jy) + get pivot wavelengths (nm) from passbands
+        wavelengths_nm, sed_fnu_Jy = self.bandflux_Wm2_to_fnu_Jy(
+            sed_band_Wm2,
+            filter_mask=filter_mask,
+            lambda_kind="pivot",
+        )
 
-        # "reported" uncertainties for SED points (same length as sed_flux)
-        sed_err = (sed_frac_err * np.abs(sed_flux)).astype(np.float32)
+        # Update mask based on conversion success
+        good = np.isfinite(sed_fnu_Jy) & (sed_fnu_Jy > 0) & (filter_mask > 0)
+        sed_mask = good.astype(np.float32)
 
-        return wavelengths, sed_flux, sed_err, filter_mask
+        # Simple fractional errors in f_nu space
+        sed_err = (sed_frac_err * np.abs(sed_fnu_Jy)).astype(np.float32)
+
+        return wavelengths_nm, sed_fnu_Jy, sed_err, sed_mask
 
     # def noise_fn(self, flux, params):
     #     noise_level=0.01
