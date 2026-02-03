@@ -417,6 +417,15 @@ class EBModel:
         bool
             True if simulation succeeded, False otherwise (e.g., PHOEBE failure).
         """
+        # Extract sample ID from output path for plot naming
+        # "training_samples/sample_042.npy" -> 42
+        sample_stem = Path(path).stem
+        try:
+            self._current_sample_id = int(sample_stem.split('_')[-1])
+        except (ValueError, IndexError):
+            # Invalid format, use default
+            self._current_sample_id = 0
+
         # Turn 1D theta into the dict form your helpers expect
         theta = np.atleast_2d(theta)
         theta_dict = {
