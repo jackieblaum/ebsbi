@@ -441,28 +441,48 @@ class EBModel:
             nbins = 200
             lc_phase_unbinned, lc_flux_unbinned, lc_err_unbinned, n_obs = self.generate_light_curve(theta, nbins=nbins)
 
+            # Setup binning plots directory if enabled
+            binning_plots_dir = None
+            if self.save_binning_plots and self.plot_output_dir:
+                binning_plots_dir = self.plot_output_dir / "binning_plots"
+                try:
+                    binning_plots_dir.mkdir(exist_ok=True)
+                except OSError as e:
+                    warnings.warn(f"Failed to create binning_plots directory: {e}")
+                    self.save_binning_plots = False
+                    binning_plots_dir = None
+
             # Bin each passband if L > nbins
             lc_phase = []
             lc_flux = []
             lc_err = []
 
-            for phases, fluxes, sigmas in zip(lc_phase_unbinned, lc_flux_unbinned, lc_err_unbinned):
+            for i, (phases, fluxes, sigmas) in enumerate(zip(lc_phase_unbinned, lc_flux_unbinned, lc_err_unbinned)):
                 L = len(phases)
                 if L > nbins:
-                    # Bin using centralized function from observational.py
+                    # Determine plot path if plotting enabled
+                    plot_path = None
+                    if self.save_binning_plots and binning_plots_dir:
+                        from ebsbi.utils import sanitize_passband_label
+                        passband_label = self._lc_dataset_labels[i]
+                        sanitized = sanitize_passband_label(passband_label)
+                        plot_path = binning_plots_dir / f"sample_{self._current_sample_id:03d}_{sanitized}.png"
+
+                    # Bin with optional plotting
                     ph_b, fl_b, er_b = bin_light_curve(
                         phases, fluxes, sigmas,
                         nbins=nbins,
                         fraction_in_eclipse=0.5,
                         atol_primary=0.001,
                         atol_secondary=0.05,
-                        plot=False
+                        plot=self.save_binning_plots,
+                        plot_filename=plot_path
                     )
                     lc_phase.append(ph_b)
                     lc_flux.append(fl_b)
                     lc_err.append(er_b)
                 else:
-                    # Already at or below target: use as-is
+                    # No binning needed
                     lc_phase.append(phases)
                     lc_flux.append(fluxes)
                     lc_err.append(sigmas)
