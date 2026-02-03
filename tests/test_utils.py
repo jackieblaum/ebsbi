@@ -91,3 +91,15 @@ def test_sanitize_passband_label_rtl_override():
     """Test right-to-left override is removed."""
     result = sanitize_passband_label('test\u202etest')
     assert '\u202e' not in result
+
+
+def test_sanitize_passband_label_combining_marks():
+    """Test combining marks are removed."""
+    result = sanitize_passband_label('test\u0301')  # Combining acute
+    assert '\u0301' not in result
+
+
+def test_sanitize_passband_label_private_use():
+    """Test private use area characters removed."""
+    result = sanitize_passband_label('test\ue000')
+    assert '\ue000' not in result

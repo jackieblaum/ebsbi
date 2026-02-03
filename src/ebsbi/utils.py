@@ -49,10 +49,11 @@ def sanitize_passband_label(label):
     # Normalize Unicode to remove combining characters and convert to NFKC form
     sanitized = unicodedata.normalize('NFKC', label)
 
-    # Remove Unicode format and control characters (security risk)
+    # Remove Unicode control, format, combining, private use, and surrogate characters
+    dangerous_categories = ['Cc', 'Cf', 'Mn', 'Mc', 'Me', 'Co', 'Cs']
     sanitized = ''.join(
         char for char in sanitized
-        if unicodedata.category(char) not in ['Cf', 'Cc']
+        if unicodedata.category(char) not in dangerous_categories
     )
 
     # Convert to lowercase
