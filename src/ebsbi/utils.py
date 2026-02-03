@@ -1,4 +1,5 @@
 """Utility functions for ebsbi."""
+import unicodedata
 
 
 def sanitize_passband_label(label):
@@ -6,8 +7,9 @@ def sanitize_passband_label(label):
     Convert passband labels to filesystem-safe names.
 
     Replaces colons, hyphens, slashes, and other special characters
-    with underscores. Removes leading/trailing whitespace and path
-    traversal sequences. Converts to lowercase.
+    with underscores. Removes leading/trailing whitespace, path
+    traversal sequences, and dangerous Unicode characters.
+    Converts to lowercase.
 
     Parameters
     ----------
@@ -44,12 +46,21 @@ def sanitize_passband_label(label):
     if not label:
         raise ValueError("Label cannot be empty or whitespace-only")
 
+    # Normalize Unicode to remove combining characters and convert to NFKC form
+    sanitized = unicodedata.normalize('NFKC', label)
+
+    # Remove Unicode format and control characters (security risk)
+    sanitized = ''.join(
+        char for char in sanitized
+        if unicodedata.category(char) not in ['Cf', 'Cc']
+    )
+
     # Convert to lowercase
-    sanitized = label.lower()
+    sanitized = sanitized.lower()
 
     # Replace filesystem-unsafe characters with underscores
-    # Covers: : - / \ * ? " < > | and whitespace
-    unsafe_chars = [':', '-', '/', '\\', '*', '?', '"', '<', '>', '|', ' ']
+    # Covers: : - / \ * ? " < > | and all whitespace
+    unsafe_chars = [':', '-', '/', '\\', '*', '?', '"', '<', '>', '|', ' ', '\t', '\n', '\r', '\v', '\f']
     for char in unsafe_chars:
         sanitized = sanitized.replace(char, '_')
 

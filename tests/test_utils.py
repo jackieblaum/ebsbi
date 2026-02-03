@@ -67,3 +67,27 @@ def test_sanitize_passband_label_special_chars():
 def test_sanitize_passband_label_strips_whitespace():
     """Test leading/trailing whitespace removed."""
     assert sanitize_passband_label(' TESS:T ') == 'tess_t'
+
+
+def test_sanitize_passband_label_tabs():
+    """Test tab characters are removed."""
+    result = sanitize_passband_label('test\ttab')
+    assert '\t' not in result
+
+
+def test_sanitize_passband_label_newlines():
+    """Test newline characters are removed."""
+    result = sanitize_passband_label('test\nline')
+    assert '\n' not in result
+
+
+def test_sanitize_passband_label_unicode_format():
+    """Test Unicode format characters are removed."""
+    result = sanitize_passband_label('test\u200btest')  # zero-width space
+    assert '\u200b' not in result
+
+
+def test_sanitize_passband_label_rtl_override():
+    """Test right-to-left override is removed."""
+    result = sanitize_passband_label('test\u202etest')
+    assert '\u202e' not in result
