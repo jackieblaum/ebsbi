@@ -72,3 +72,41 @@ def test_extinction_wavelength_dependent():
 
     # Blue should be more attenuated (smaller ratio)
     assert blue_ratio < red_ratio, "Blue filters should have stronger extinction"
+
+
+def test_ebv_zero_is_noop():
+    """E(B-V) = 0 should not apply extinction"""
+    wrapper = _make_wrapper(ebv=0.0)
+    res = wrapper.compute_sed(phases=[0.25])
+
+    # Should complete without error
+    assert res["fluxes"].shape[0] == 1
+    assert np.any(np.isfinite(res["fluxes"][0]))
+
+
+def test_ebv_none_is_noop():
+    """E(B-V) = None should not apply extinction"""
+    bundle = phoebe.default_binary()
+    bundle.set_value('teff@primary', 6000)
+    bundle.set_value('teff@secondary', 5000)
+    bundle.set_value('requiv@primary', 1.0)
+    bundle.set_value('requiv@secondary', 0.8)
+
+    wrapper = PhoebeWrapper(
+        bundle=bundle,
+        distance=100.0,
+        ebv=None,
+    )
+    res = wrapper.compute_sed(phases=[0.25])
+
+    # Should complete without error
+    assert res["fluxes"].shape[0] == 1
+    assert np.any(np.isfinite(res["fluxes"][0]))
+
+
+def test_negative_ebv_raises_error():
+    """E(B-V) < 0 should raise ValueError"""
+    wrapper = _make_wrapper(ebv=-0.1)
+
+    with pytest.raises(ValueError, match="non-negative"):
+        wrapper.compute_sed(phases=[0.25])
