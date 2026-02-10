@@ -286,6 +286,9 @@ class PhoebeWrapper:
             else:
                 fluxes_array[:, filt_idx] = vals
 
+        # Apply extinction to intrinsic fluxes
+        fluxes_array = self._apply_extinction(fluxes_array)
+
         filter_mask = filter_mask & np.all(np.isfinite(fluxes_array), axis=0)
 
         return {
