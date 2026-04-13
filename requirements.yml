@@ -1,0 +1,25 @@
+name: ebsbi
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy>=1.26
+  - scipy>=1.10
+  - pandas>=2.2
+  - matplotlib>=3.9
+  - h5py>=3.12
+  - pyyaml>=6.0
+  - tqdm>=4.66
+  - astropy>=6.1
+  - xarray>=2024.10
+  - pip
+  - pip:
+    - torch>=2.0
+    - phoebe>=2.4
+    - isochrones>=2.1
+    - extinction>=0.4
+    - pymc>=5.18
+    - pyphot>=1.4
+    - eclipsebin>=0.4
+    - nbi>=0.4
